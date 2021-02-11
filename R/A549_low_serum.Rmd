@@ -1,0 +1,500 @@
+---
+title: "mA549 low serum"
+author: "Mark Dane"
+date: "`r Sys.Date()`"
+output: 
+  flexdashboard::flex_dashboard:
+    storyboard: true
+
+
+---
+
+
+
+```{r "setup", include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8,
+                      echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE)
+
+  # flexdashboard::flex_dashboard:
+  #   storyboard: true
+  #   source_code: embed
+    
+library(MEMA)
+library(tidyverse)
+library(scales)
+library(plotly)
+library(DT)
+library(httr)
+
+library(gridExtra)
+library(grid)
+library(lattice)
+
+
+#' Print 50 randomly selected images from each ECM protein spot type
+#'
+#' This function is rather specific implemnentation without error checking. Assumption include:
+#' the thread has already logged on to an omero instance.
+#' There are at least 50 images of each type of ECM protein
+#' The packages httr and ggplot have already been loaded (maybe others too). 
+#' It was developed to be called within a knitr script.
+#'
+#'@param dt A data.frame with MEP, ECM1, Well, Block and IMageID columns.
+#'@return a ggplot object
+
+printImages <- function(dt, groupType = "Well", nrImages = 20){
+  for(gt in unique(dt[[groupType]])){
+    dt1 <- dt[dt[[groupType]]==gt,]
+    set.seed(42)
+    dt1 <- dt1[sample(1:nrow(dt1),size = min(nrImages, nrow(dt1)),replace = FALSE),]
+    dt1 <- dt1[order(Well),]
+    #Add locations for text labels
+    dt1$Labelx <- mapply(function(ii) {
+      xmin=5*((ii-1) %% 10)+1
+    },1:nrow(dt1))
+    dt1$Labely <- mapply(function(ii) {
+      ymin=floor((ii-1)/10)*5+1
+    },1:nrow(dt1))
+    
+    #Download and draw the selected image
+    res1 <- lapply(dt1$ImageID, function(i){
+      omeroR <-GET(paste0("https://meplincs.ohsu.edu/webclient/render_image/", 
+                          i,"/"))
+      rimage <- content(omeroR,as = "parsed",type = "image/JPEG")
+      rasterGrob(rimage, interpolate=FALSE, width=1, height=1)
+    })
+    
+    p <- ggplot(dt1, aes(x=Labelx,y=Labely, label=paste("Row:",ArrayRow,"\nCol:",ArrayColumn)))+
+      
+      ggtitle(paste0(groupType,": ",unique(dt1[[groupType]]), ", Plate ",unique(dt$Barcode)))+
+      coord_cartesian(xlim = c(0,50),ylim = c(0,5))+
+      mapply(function(ii) {
+        xmin=5*((ii-1) %% 10)
+        xmax=5*((ii-1) %% 10)+5
+        ymin=floor((ii-1)/10)*5
+        ymax=5+floor((ii-1)/10)*5
+        res1[[ii]]$name <- ii
+        annotation_custom(res1[[ii]], xmin, xmax, ymin, ymax)
+      },
+      1:nrow(dt1))
+    
+    p <- p +     geom_text(colour="white")
+    print(p)
+  }
+}
+
+
+```
+
+
+```{r readData, echo=FALSE}
+
+studyName <- "a549_low_serum"
+path <- "/Users/dane/Documents/A549_low_serum/data/"
+l2 <- map(dir(path = path, pattern = "level_2", full.names = TRUE), read_csv) %>%
+  bind_rows() %>%
+  mutate(Study = studyName,
+         Well_Ligand = paste(Well,Ligand,sep="_"),
+         WellRow = factor(gsub("[[:digit:]]*","",Well),levels = c("H","G","F","E","D","C","B","A")),
+         WellCol = as.integer(gsub("[[:alpha:]]","", Well)),
+         OmeroDetailURL = paste0("<a href=\"https://meplincs.ohsu.edu/webclient/img_detail/", 
+            ImageID, "/\"", " target=\"_blank\">Omero</a>"),
+         OmeroThumbnailURL = paste0("<a href=\"https://meplincs.ohsu.edu/webclient/render_thumbnail/", 
+            ImageID, "/\"", " target=\"_blank\">Omero</a>"),
+         OmeroImageURL = paste0("<a href=\"https://meplincs.ohsu.edu/webclient/render_image/", 
+            ImageID, "/\"", " target=\"_blank\">Omero</a>")) %>%
+  group_by(Barcode, Well) %>%
+  mutate(WellCellCount = n()) %>%
+  ungroup()
+
+```
+
+### Experiment Overview
+
+```{r  fig.width=5,fig.height=3.5}
+
+for(barcode in unique(l2$Barcode)){
+  dt <- l2 %>%
+    filter(Barcode==barcode) %>%
+    select(WellCol, WellRow, WellCellCount, CellLine) %>%
+    distinct
+p <- ggplot(dt, aes(x=WellCol, y=WellRow, fill=WellCellCount, label=sprintf("%5.0f \nCells", WellCellCount)))+
+  geom_tile(colour="black")+
+scale_fill_gradient(low = "white", high = "red")+
+  guides(fill = guide_legend("Well Cell Count", keywidth = .5, keyheight = .5))+
+  ggtitle(paste("Well Cell Count in",barcode))+
+  xlab("")+ylab("")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(.8)),axis.title.x = element_text(size=rel(1)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 5))
+p <- p +geom_text(size=3)
+print(p)
+}
+
+for(barcode in unique(l2$Barcode)){
+  dt <- l2 %>%
+    filter(Barcode==barcode)
+p <- ggplot(dt, aes(x=ArrayColumn, y=ArrayRow, colour=Spot_PA_SpotCellCount))+
+  geom_point(size=rel(.8))+
+  scale_y_reverse()+
+  scale_x_continuous(breaks= c(min(l2$ArrayColumn),round(mean(c(min(l2$ArrayColumn),max(l2$ArrayColumn)))),max(l2$ArrayColumn)))+
+  scale_colour_gradient(low = "white", high = "red")+
+  guides(colour = guide_legend("Spot Cell Count", keywidth = .5, keyheight = .5))+
+  ggtitle(paste("Spot Cell Count for",unique(dt$CellLine), "cells in plate",barcode))+
+  xlab("")+ylab("")+theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(.8)),axis.title.x = element_text(size=rel(1)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 5))+
+  facet_wrap(~Well, nrow=2)
+ print(p)
+}
+
+```
+
+***
+
+
+
+### Cell count boxplots of control MEPs by ECM protein and ligand
+
+
+```{r PBSBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2 %>%
+  filter(str_detect(MEP, "PBS"))%>%
+    select(ECM1,Spot_PA_SpotCellCount, CellLine) %>%
+    distinct
+
+dt$ECM1 <- str_replace(dt$ECM1,"-.*","")
+p <- ggplot(dt, aes(x=reorder(ECM1,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA_SpotCellCount))+
+  geom_boxplot(outlier.shape = NA)+
+    scale_fill_manual(values = c("cornflowerblue","coral"))+
+    scale_colour_manual(values = c("black","blueviolet"))+
+  guides(colour = guide_legend("Buffer"),
+         fill=guide_legend("Protein Conc."))+
+  labs(x = "ECM Protein", y="Spot Cell Count",title=paste("Spot Cell Count for",unique(dt$CellLine), "cells by ECM Protein, PBS spots"))+
+  theme_bw() +
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2[grepl("COL1",l2$MEP),]
+dt <- l2 %>%
+  filter(str_detect(MEP, "COL1"))%>%
+    select(Ligand, Spot_PA_SpotCellCount, CellLine) %>%
+    distinct
+
+p <- ggplot(dt, aes(x=reorder(Ligand,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA_SpotCellCount))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand",
+       y="Spot Cell Count",
+       title=paste("Spot Cell Count for",unique(dt$CellLine), "cells by Ligand, COL1 spots"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+
+```
+
+***
+
+These figures summarize the cell counts for the ECM proteins in wells containing PBS and the spots with collagen type 1 paired with the ligands 
+
+### Proliferation   
+
+
+```{r EdUBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2 %>%
+  filter(Ligand == "PBS") %>%
+  mutate(Nuclei_GT_EdU_MeanIntensity = squish(Nuclei_GT_EdU_MeanIntensity, range = quantile(l2$Nuclei_GT_EdU_MeanIntensity, c(.01, .98))))
+
+dt <- l2[grepl("PBS",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(ECM1,Nuclei_GT_EdU_MeanIntensity  , FUN=median), y=log2(Nuclei_GT_EdU_MeanIntensity)))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "ECM Protein", y="EdU Intensity (log2)",title=paste("EdU Intensity  for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2 %>%
+  filter(str_detect(ECMp, "COL1")) %>%
+  mutate(Nuclei_GT_EdU_MeanIntensity = squish(Nuclei_GT_EdU_MeanIntensity, range = quantile(l2$Nuclei_GT_EdU_MeanIntensity, c(.01, .98))))
+
+p <- ggplot(dt, aes(x=reorder(Ligand,Nuclei_GT_EdU_MeanIntensity, FUN=median), y=log2(Nuclei_GT_EdU_MeanIntensity)))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand", y="EdU Intensity (log2)",title=paste("EdU Intensity for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+```
+
+
+```{r EdUHighdBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2 %>%
+  filter(Ligand == "PBS")
+p <- ggplot(dt, aes(x=reorder(ECM1,Nuclei_PA_Gated_EdUPositiveProportion, FUN=median), y=Nuclei_PA_Gated_EdUPositiveProportion))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "ECM Protein", y="EdU High Proportion",title=paste("EdU High Proportion for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2 %>%
+    filter(str_detect(ECMp, "COL1"))
+
+p <- ggplot(dt, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion  ,FUN=median), y=Nuclei_PA_Gated_EdUPositiveProportion  ))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand", y="EdU High Proportion ",title=paste("EdU High Proportion for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+```
+
+```{r EdUintStdBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2 %>%
+  filter(Ligand == "PBS") %>%
+  mutate(Nuclei_GT_EdU_VarianceIntensity = squish(Nuclei_GT_EdU_VarianceIntensity, range = quantile(l2$Nuclei_GT_EdU_VarianceIntensity, c(.02, .98))))
+
+p <- ggplot(dt, aes(x=reorder(ECM1,Nuclei_GT_EdU_VarianceIntensity, FUN=median), y=Nuclei_GT_EdU_VarianceIntensity))+
+  geom_boxplot(outlier.shape = NA)+
+  scale_y_continuous(limits = c(0, 500)) +
+  labs(x = "ECM Protein", y="EdU Intensity Variance ",title=paste("EdU Intensity Variance for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2 %>%
+  filter(str_detect(ECMp, "COL1")) %>%
+  mutate(Nuclei_GT_EdU_VarianceIntensity = squish(Nuclei_GT_EdU_VarianceIntensity, range = quantile(l2$Nuclei_GT_EdU_VarianceIntensity, c(.01, .98))))
+
+p <- ggplot(dt, aes(x=reorder(Ligand, Nuclei_GT_EdU_VarianceIntensity  ,FUN=median), y=Nuclei_GT_EdU_VarianceIntensity  ))+
+  geom_boxplot(outlier.shape = NA)+
+  scale_y_continuous(limits = c(0, 500)) +
+  labs(x = "Ligand", y="EdU Intensity Variance ",title=paste("EdU Intensity Variance for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+```
+
+
+***
+
+### KRT5 
+
+
+```{r lineageBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2[grepl("PBS",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_GT_KRT5_MeanIntensity  , FUN=median), y=log2(Cytoplasm_GT_KRT5_MeanIntensity)))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "ECM Protein", y="KRT5 Intensity (log2)",title=paste("KRT5 Intensity  for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2[grepl("COL1",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_GT_KRT5_MeanIntensity, FUN=median), y=log2(Cytoplasm_GT_KRT5_MeanIntensity)))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand", y="KRT5 Intensity (log2)",title=paste("KRT5 Intensity for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+
+```
+
+
+```{r KRT5HighdBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2[grepl("PBS",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_PA_Gated_KRT5PositiveProportion, FUN=median), y=Cytoplasm_PA_Gated_KRT5PositiveProportion))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "ECM Protein", y="KRT5 High Proportion",title=paste("KRT5 High Proportion for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2[grepl("COL1",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_PA_Gated_KRT5PositiveProportion  ,FUN=median), y=Cytoplasm_PA_Gated_KRT5PositiveProportion  ))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand", y="KRT5 High Proportion ",title=paste("KRT5 High Proportion for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+
+```
+
+```{r intStdBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2 %>%
+  filter(Ligand == "PBS") %>%
+  mutate(Cytoplasm_GT_KRT5_VarianceIntensity = squish(Cytoplasm_GT_KRT5_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT5_VarianceIntensity, c(.01, .98))))
+
+p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_GT_KRT5_VarianceIntensity, FUN=median), y=Cytoplasm_GT_KRT5_VarianceIntensity))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "ECM Protein", y="KRT5 Intensity Variance ",title=paste("KRT5 Intensity Variance for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2 %>%
+  filter(str_detect(ECMp, "COL1")) %>%
+  mutate(Cytoplasm_GT_KRT5_VarianceIntensity = squish(Cytoplasm_GT_KRT5_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT5_VarianceIntensity, c(.01, .98))))
+
+p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_GT_KRT5_VarianceIntensity  ,FUN=median), y=Cytoplasm_GT_KRT5_VarianceIntensity  ))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand", y="KRT5 Intensity Variance ",title=paste("KRT5 Intensity Variance for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+```
+
+
+***
+
+
+These figures summarize the KRT5 signal from the cytoplasm. The first set of boxplots are the mean intensity. This value is gated at the cell level to classify each cell as KRT5+/-. The proportion of KRT5+ cells in each spot are summarized in the boxplots of the second figure.  
+
+The KRT19 variance shows if there is evidence of signal in the cytoplasmic texture.
+
+Ligand values are from the COL1 spots and the ECMp values are from the PBS wells.  
+
+
+### KRT19 
+
+
+```{r KRT19lineageBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2[grepl("PBS",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_GT_KRT19_MeanIntensity  , FUN=median), y=log2(Cytoplasm_GT_KRT19_MeanIntensity)))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "ECM Protein", y="KRT19 Intensity (log2)",title=paste("KRT19 Intensity  for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2[grepl("COL1",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_GT_KRT19_MeanIntensity, FUN=median), y=log2(Cytoplasm_GT_KRT19_MeanIntensity)))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand", y="KRT19 Intensity (log2)",title=paste("KRT19 Intensity for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+
+```
+
+
+```{r KRT19HighdBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2[grepl("PBS",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_PA_Gated_KRT19PositiveProportion, FUN=median), y=Cytoplasm_PA_Gated_KRT19PositiveProportion))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "ECM Protein", y="KRT19 High Proportion",title=paste("KRT19 High Proportion for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2[grepl("COL1",l2$MEP),]
+p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_PA_Gated_KRT19PositiveProportion  ,FUN=median), y=Cytoplasm_PA_Gated_KRT19PositiveProportion  ))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand", y="KRT19 High Proportion ",title=paste("KRT19 High Proportion for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+
+```
+
+```{r KRT19intStdBoxplts, fig.width=12,fig.height=7}
+
+dt <- l2 %>%
+  filter(Ligand == "PBS") %>%
+  mutate(Cytoplasm_GT_KRT19_VarianceIntensity = squish(Cytoplasm_GT_KRT19_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT19_VarianceIntensity, c(.01, .98))))
+
+p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_GT_KRT19_VarianceIntensity, FUN=median), y=Cytoplasm_GT_KRT19_VarianceIntensity))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "ECM Protein", y="KRT19 Intensity Variance ",title=paste("KRT19 Intensity Variance for",unique(dt$CellLine), "cells by ECM Protein"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+dt <- l2 %>%
+  filter(str_detect(ECMp, "COL1")) %>%
+  mutate(Cytoplasm_GT_KRT19_VarianceIntensity = squish(Cytoplasm_GT_KRT19_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT19_VarianceIntensity, c(.01, .98))))
+
+p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_GT_KRT19_VarianceIntensity  ,FUN=median), y=Cytoplasm_GT_KRT19_VarianceIntensity  ))+
+  geom_boxplot(outlier.shape = NA)+
+  labs(x = "Ligand", y="KRT19 Intensity Variance ",title=paste("KRT19 Intensity Variance for",unique(dt$CellLine), "cells by Ligand"))+
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+```
+
+
+***
+
+These figures summarize the KRT19 signal from the cytoplasm. The first set of boxplots are the mean intensity. This value is gated at the cell level to classify each cell as KRT19+/-. The proportion of KRT19+ cells in each spot are summarized in the boxplots of the second figure.  
+
+The KRT19 variance shows if there is evidence of signal in the cytoplasmic texture.
+
+Ligand values are from the COL1 spots and the ECMp values are from the PBS wells.  
+
+
+### Datatable with Image Links
+
+
+
+```{r datatable}
+
+colNames <- c("Barcode","ArrayRow","ArrayColumn","ECM1","Ligand","Spot_PA_SpotCellCount","Cytoplasm_GT_KRT5_MeanIntensity","Cytoplasm_GT_KRT19_MeanIntensity")
+colNamesDisplay <- c("Barcode","ArrayRow","ArrayColumn","ECM protein","Ligand","Spot Cell Count", "KRT5", "KRT19")
+
+#Setup for spots to display images
+colNamesSpots <- c(colNames,"OmeroDetailURL")
+colNamesDisplaySpots <- c(colNamesDisplay,"Image Link")
+dt <- setorder(dt, -Spot_PA_SpotCellCount)
+datatable(dt[,colNamesSpots, with=FALSE], options = list(pageLength = 25), colnames =colNamesDisplaySpots, escape = FALSE)
+
+```
+
+### Images
+
+```{r images, fig.width=20, fig.height=2.5, eval=FALSE}
+
+#log into omero
+source("OmeroLogin.R")
+
+#Down sample the dataset
+dt <- l2[l2$Ligand %in% c("BMP2", "IFNG","TGFB1||Cterminus","TGFB1||LAP", "OSM", "TNF","IGFBP3|1")&l2$ECM1=="COL1",]
+
+printImages(dt,groupType = "Ligand", nrImages = 10)
+```
+
+***
+These images are randomly selected from the collagen 1 spots in the labeled ligand.
+
