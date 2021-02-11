@@ -13,7 +13,7 @@ output:
 
 ```{r "setup", include=FALSE}
 knitr::opts_chunk$set(fig.width=12, fig.height=8,
-                      echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE)
+                      echo=FALSE, warning=FALSE, message=FALSE, cache=FALSE)
 
   # flexdashboard::flex_dashboard:
   #   storyboard: true
@@ -39,7 +39,7 @@ library(lattice)
 #' The packages httr and ggplot have already been loaded (maybe others too). 
 #' It was developed to be called within a knitr script.
 #'
-#'@param dt A data.frame with MEP, ECM1, Well, Block and IMageID columns.
+#'@param dt A data.frame with MEP, ECMp, Well, Block and IMageID columns.
 #'@return a ggplot object
 
 printImages <- function(dt, groupType = "Well", nrImages = 20){
@@ -91,6 +91,11 @@ printImages <- function(dt, groupType = "Well", nrImages = 20){
 
 studyName <- "a549_low_serum"
 path <- "/Users/dane/Documents/A549_low_serum/data/"
+
+l1 <-  map(dir(path = path, pattern = "level_1_subset", full.names = TRUE), read_csv) %>%
+  bind_rows() %>%
+  mutate(ECMp = str_remove(ECMp, "_.*"))
+
 l2 <- map(dir(path = path, pattern = "level_2", full.names = TRUE), read_csv) %>%
   bind_rows() %>%
   mutate(Study = studyName,
@@ -104,7 +109,8 @@ l2 <- map(dir(path = path, pattern = "level_2", full.names = TRUE), read_csv) %>
          OmeroImageURL = paste0("<a href=\"https://meplincs.ohsu.edu/webclient/render_image/", 
             ImageID, "/\"", " target=\"_blank\">Omero</a>")) %>%
   group_by(Barcode, Well) %>%
-  mutate(WellCellCount = n()) %>%
+  mutate(WellCellCount = n(),
+         ECMp = str_remove(ECMp, "_.*")) %>%
   ungroup()
 
 ```
@@ -157,11 +163,10 @@ p <- ggplot(dt, aes(x=ArrayColumn, y=ArrayRow, colour=Spot_PA_SpotCellCount))+
 
 dt <- l2 %>%
   filter(str_detect(MEP, "PBS"))%>%
-    select(ECM1,Spot_PA_SpotCellCount, CellLine) %>%
+    select(ECMp,Spot_PA_SpotCellCount, CellLine) %>%
     distinct
 
-dt$ECM1 <- str_replace(dt$ECM1,"-.*","")
-p <- ggplot(dt, aes(x=reorder(ECM1,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA_SpotCellCount))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA_SpotCellCount))+
   geom_boxplot(outlier.shape = NA)+
     scale_fill_manual(values = c("cornflowerblue","coral"))+
     scale_colour_manual(values = c("black","blueviolet"))+
@@ -207,7 +212,7 @@ dt <- l2 %>%
   mutate(Nuclei_GT_EdU_MeanIntensity = squish(Nuclei_GT_EdU_MeanIntensity, range = quantile(l2$Nuclei_GT_EdU_MeanIntensity, c(.01, .98))))
 
 dt <- l2[grepl("PBS",l2$MEP),]
-p <- ggplot(dt, aes(x=reorder(ECM1,Nuclei_GT_EdU_MeanIntensity  , FUN=median), y=log2(Nuclei_GT_EdU_MeanIntensity)))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Nuclei_GT_EdU_MeanIntensity  , FUN=median), y=log2(Nuclei_GT_EdU_MeanIntensity)))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="EdU Intensity (log2)",title=paste("EdU Intensity  for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
@@ -234,7 +239,7 @@ p
 
 dt <- l2 %>%
   filter(Ligand == "PBS")
-p <- ggplot(dt, aes(x=reorder(ECM1,Nuclei_PA_Gated_EdUPositiveProportion, FUN=median), y=Nuclei_PA_Gated_EdUPositiveProportion))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Nuclei_PA_Gated_EdUPositiveProportion, FUN=median), y=Nuclei_PA_Gated_EdUPositiveProportion))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="EdU High Proportion",title=paste("EdU High Proportion for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
@@ -261,7 +266,7 @@ dt <- l2 %>%
   filter(Ligand == "PBS") %>%
   mutate(Nuclei_GT_EdU_VarianceIntensity = squish(Nuclei_GT_EdU_VarianceIntensity, range = quantile(l2$Nuclei_GT_EdU_VarianceIntensity, c(.02, .98))))
 
-p <- ggplot(dt, aes(x=reorder(ECM1,Nuclei_GT_EdU_VarianceIntensity, FUN=median), y=Nuclei_GT_EdU_VarianceIntensity))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Nuclei_GT_EdU_VarianceIntensity, FUN=median), y=Nuclei_GT_EdU_VarianceIntensity))+
   geom_boxplot(outlier.shape = NA)+
   scale_y_continuous(limits = c(0, 500)) +
   labs(x = "ECM Protein", y="EdU Intensity Variance ",title=paste("EdU Intensity Variance for",unique(dt$CellLine), "cells by ECM Protein"))+
@@ -286,7 +291,27 @@ p
 ```
 
 
+
+```{r cell_cycle_figures, fig.width = 12, fig.height=5, eval = FALSE}
+
+df <- l1%>%
+  filter(ECMp == "COL1")
+
+p <- ggplot(df, aes(x = log2(Nuclei_GT_DAPI_IntegratedIntensity), y = log2(Nuclei_GT_EdU_MeanIntensity), color = factor(Nuclei_PA_Gated_EdUPositive))) +
+  geom_point(size = .5, alpha = .2) +
+  guides(color = FALSE) +
+  labs(title = "Cell cycle plots cells on COL1 replicates",
+       x = "Integrated DAPI intensity (log2)",
+       y = "Mean EdU intensity (log2)") +
+  scale_color_manual(values = c("0" = "black", "1" = "cornflowerblue")) +
+  facet_grid(Barcode~Well)
+
+p
+
+```
+
 ***
+
 
 ### KRT5 
 
@@ -294,7 +319,7 @@ p
 ```{r lineageBoxplts, fig.width=12,fig.height=7}
 
 dt <- l2[grepl("PBS",l2$MEP),]
-p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_GT_KRT5_MeanIntensity  , FUN=median), y=log2(Cytoplasm_GT_KRT5_MeanIntensity)))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Cytoplasm_GT_KRT5_MeanIntensity  , FUN=median), y=log2(Cytoplasm_GT_KRT5_MeanIntensity)))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="KRT5 Intensity (log2)",title=paste("KRT5 Intensity  for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
@@ -311,14 +336,13 @@ p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_GT_KRT5_MeanIntensity, FUN=median
 p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
 p
 
-
 ```
 
 
 ```{r KRT5HighdBoxplts, fig.width=12,fig.height=7}
 
 dt <- l2[grepl("PBS",l2$MEP),]
-p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_PA_Gated_KRT5PositiveProportion, FUN=median), y=Cytoplasm_PA_Gated_KRT5PositiveProportion))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Cytoplasm_PA_Gated_KRT5PositiveProportion, FUN=median), y=Cytoplasm_PA_Gated_KRT5PositiveProportion))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="KRT5 High Proportion",title=paste("KRT5 High Proportion for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
@@ -338,13 +362,14 @@ p
 
 ```
 
+
 ```{r intStdBoxplts, fig.width=12,fig.height=7}
 
 dt <- l2 %>%
   filter(Ligand == "PBS") %>%
   mutate(Cytoplasm_GT_KRT5_VarianceIntensity = squish(Cytoplasm_GT_KRT5_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT5_VarianceIntensity, c(.01, .98))))
 
-p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_GT_KRT5_VarianceIntensity, FUN=median), y=Cytoplasm_GT_KRT5_VarianceIntensity))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Cytoplasm_GT_KRT5_VarianceIntensity, FUN=median), y=Cytoplasm_GT_KRT5_VarianceIntensity))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="KRT5 Intensity Variance ",title=paste("KRT5 Intensity Variance for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
@@ -367,6 +392,24 @@ p
 ```
 
 
+```{r KRT5_gating_figures, fig.width = 12, fig.height=5}
+
+df <- l1%>%
+  filter(ECMp == "COL1")
+
+p <- ggplot(df, aes(x = log2(Cytoplasm_GT_KRT19_MeanIntensity), y = log2(Cytoplasm_GT_KRT5_MeanIntensity), color = factor(Cytoplasm_PA_Gated_KRT5Positive))) +
+  geom_point(size = .5, alpha = .2) +
+  guides(color = FALSE) +
+  labs(title = "KRT5 Gating plots of cells on COL1 replicates",
+       x = "Mean KRT19 intensity (log2)",
+       y = "Mean KRT5 intensity (log2)") +
+  scale_color_manual(values = c("0" = "black", "1" = "cornflowerblue")) +
+  facet_grid(Barcode~Well)
+p
+
+```
+
+
 ***
 
 
@@ -383,7 +426,7 @@ Ligand values are from the COL1 spots and the ECMp values are from the PBS wells
 ```{r KRT19lineageBoxplts, fig.width=12,fig.height=7}
 
 dt <- l2[grepl("PBS",l2$MEP),]
-p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_GT_KRT19_MeanIntensity  , FUN=median), y=log2(Cytoplasm_GT_KRT19_MeanIntensity)))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Cytoplasm_GT_KRT19_MeanIntensity  , FUN=median), y=log2(Cytoplasm_GT_KRT19_MeanIntensity)))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="KRT19 Intensity (log2)",title=paste("KRT19 Intensity  for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
@@ -407,7 +450,7 @@ p
 ```{r KRT19HighdBoxplts, fig.width=12,fig.height=7}
 
 dt <- l2[grepl("PBS",l2$MEP),]
-p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_PA_Gated_KRT19PositiveProportion, FUN=median), y=Cytoplasm_PA_Gated_KRT19PositiveProportion))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Cytoplasm_PA_Gated_KRT19PositiveProportion, FUN=median), y=Cytoplasm_PA_Gated_KRT19PositiveProportion))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="KRT19 High Proportion",title=paste("KRT19 High Proportion for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
@@ -427,13 +470,14 @@ p
 
 ```
 
+
 ```{r KRT19intStdBoxplts, fig.width=12,fig.height=7}
 
 dt <- l2 %>%
   filter(Ligand == "PBS") %>%
   mutate(Cytoplasm_GT_KRT19_VarianceIntensity = squish(Cytoplasm_GT_KRT19_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT19_VarianceIntensity, c(.01, .98))))
 
-p <- ggplot(dt, aes(x=reorder(ECM1,Cytoplasm_GT_KRT19_VarianceIntensity, FUN=median), y=Cytoplasm_GT_KRT19_VarianceIntensity))+
+p <- ggplot(dt, aes(x=reorder(ECMp,Cytoplasm_GT_KRT19_VarianceIntensity, FUN=median), y=Cytoplasm_GT_KRT19_VarianceIntensity))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="KRT19 Intensity Variance ",title=paste("KRT19 Intensity Variance for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
@@ -456,6 +500,31 @@ p
 ```
 
 
+```{r KRT19_gating_plots, fig.width = 12, fig.height=5}
+p <- ggplot(df, aes(x = log2(Cytoplasm_GT_KRT19_MeanIntensity), y = log2(Cytoplasm_GT_KRT5_MeanIntensity), color = factor(Cytoplasm_PA_Gated_KRT19Positive))) +
+  geom_point(size = .5, alpha = .2) +
+  guides(color = FALSE) +
+  labs(title = "KRT19 Gating plots of cells on COL1 replicates",
+       x = "Mean KRT19 intensity (log2)",
+       y = "Mean KRT5 intensity (log2)") +
+  scale_color_manual(values = c("0" = "black", "1" = "cornflowerblue")) +
+  facet_grid(Barcode~Well)
+p
+
+p <- ggplot(df, aes(x = log2(Cytoplasm_GT_KRT19_MeanIntensity), y = log2(Cytoplasm_GT_KRT5_MeanIntensity), color = factor(Cytoplasm_PA_Gated_KRTClass))) +
+  geom_point(size = .5, alpha = .1) +
+  labs(title = "KRT gating plots of cells on COL1 replicates",
+       x = "Mean KRT19 intensity (log2)",
+       y = "Mean KRT5 intensity (log2)",
+       color = "KRT class") +
+    scale_color_manual(values = c("0" = "gray24", "1" = "darkgreen", "2" = "red4", "3" = "orange")) +
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1))) +
+  theme_bw()+
+  facet_grid(Barcode~Ligand1)
+p
+
+```
+
 ***
 
 These figures summarize the KRT19 signal from the cytoplasm. The first set of boxplots are the mean intensity. This value is gated at the cell level to classify each cell as KRT19+/-. The proportion of KRT19+ cells in each spot are summarized in the boxplots of the second figure.  
@@ -471,7 +540,7 @@ Ligand values are from the COL1 spots and the ECMp values are from the PBS wells
 
 ```{r datatable}
 
-colNames <- c("Barcode","ArrayRow","ArrayColumn","ECM1","Ligand","Spot_PA_SpotCellCount","Cytoplasm_GT_KRT5_MeanIntensity","Cytoplasm_GT_KRT19_MeanIntensity")
+colNames <- c("Barcode","ArrayRow","ArrayColumn","ECMp","Ligand","Spot_PA_SpotCellCount","Cytoplasm_GT_KRT5_MeanIntensity","Cytoplasm_GT_KRT19_MeanIntensity")
 colNamesDisplay <- c("Barcode","ArrayRow","ArrayColumn","ECM protein","Ligand","Spot Cell Count", "KRT5", "KRT19")
 
 #Setup for spots to display images
@@ -490,7 +559,7 @@ datatable(dt[,colNamesSpots, with=FALSE], options = list(pageLength = 25), colna
 source("OmeroLogin.R")
 
 #Down sample the dataset
-dt <- l2[l2$Ligand %in% c("BMP2", "IFNG","TGFB1||Cterminus","TGFB1||LAP", "OSM", "TNF","IGFBP3|1")&l2$ECM1=="COL1",]
+dt <- l2[l2$Ligand %in% c("BMP2", "IFNG","TGFB1||Cterminus","TGFB1||LAP", "OSM", "TNF","IGFBP3|1")&l2$ECMp=="COL1",]
 
 printImages(dt,groupType = "Ligand", nrImages = 10)
 ```
