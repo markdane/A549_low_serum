@@ -35,10 +35,10 @@ getBarcodes <- function(studyName, synId = "syn10846457"){
 
 #Debug add signif reduction
 writeLevelStudyData <- function(x, level){
-  if(!dir.exists(paste0(output_path,"study/",studyName))) dir.create(paste0(output_path,"study/",studyName), recursive = TRUE)
-  if(!dir.exists(paste0(output_path,"study/",studyName,"/Annotated"))) dir.create(paste0(output_path,"study/",studyName,"/Annotated"), recursive = TRUE)
-  if(!dir.exists(paste0(output_path,"study/",studyName,"/Annotated/GT1"))) dir.create(paste0(output_path,"study/",studyName,"/Annotated/GT1"), recursive = TRUE)
-  write_csv(x, paste0(output_path,"study/",studyName,"/Annotated/GT1/",studyName,"_level_",level,".csv"))
+  # if(!dir.exists(paste0(output_path,"study/",studyName))) dir.create(paste0(output_path,"study/",studyName), recursive = TRUE)
+  # if(!dir.exists(paste0(output_path,"study/",studyName,"/Annotated"))) dir.create(paste0(output_path,"study/",studyName,"/Annotated"), recursive = TRUE)
+  if(!dir.exists(paste0(output_path,"Annotated/GT1"))) dir.create(paste0(output_path,"Annotated/GT1"), recursive = TRUE)
+  write_csv(x, paste0(output_path,studyName,"_level_",level,".csv"))
 }
 
 ###End of functions
@@ -53,7 +53,7 @@ if(!interactive()){
 } else {
   input_path <- "~/Documents/A549_low_serum/data/"
   output_path <- "~/Documents/A549_low_serum/data/"
-  studyName <- "a549_senescence_mema_1"
+  studyName <- "a549_low_serum"
   k <- 0
 }
 
@@ -77,41 +77,14 @@ level2_data$Drug[level2_data$Drug == "air"] <- "DMSO"
 
 rrscaleColumn <- function(x, zeros = 1){
   xRRValues <- as.matrix(x) %>%
-    rrscale(zeros = zeros)
-  xRR <- xRRValues$RR %>%
-    c
-}
-addRRFeatures <- function(df){
-  #denoise by squishing
-  rr <- df %>%
-    select(matches("SpotCellCount|Surface|Intensity")) %>%
-    mutate_all(rrscaleColumn, zeros = 1)
-  
-  colnames(rr) <-  paste0(colnames(rr),"_RR")
-
-  rrProp <- df %>%
-    select(matches("Proportion")) %>%
-    mutate_all(rrscaleColumn, zeros = .001)
-  
-  colnames(rrProp) <-  paste0(colnames(rrProp),"_RR")
-
-  dfRR <- cbind(df, rr, rrProp)
+    rrscale(zeros = zeros) 
+  x_RR <- xRRValues$RR %>%
+    pull
+  return(x_RR)
 }
 
-add_matched_RRFeatures <- function(df, match_string){
-  #denoise by squishing
-  rr <- df %>%
-    select(matches(match_string)) %>%
-    mutate_all(rrscaleColumn, zeros = 1)
-  
-  colnames(rr) <-  paste0(colnames(rr),"_RR")
-  return(rr)
-}
-
-SCC_RRs <- add_matched_RRFeatures(level2_data, match_string = "SpotCellCount")
-intensity_RRs <- add_matched_RRFeatures(level2_data, match_string = "Intensity")
-level2_data <- bind_cols(level2_data, SCC_RRs, intensity_RRs)
-rm(SCC_RRs, intensity_RRs)
+level2_data <- level2_data %>%
+  mutate(across(matches("SpotCellCount|Intensity"), rrscaleColumn, .names = "{col}_RR"))
 
 #RUVLoess normalize all signals
 if(!k==0){
@@ -126,10 +99,9 @@ if(!k==0){
   level3_data <- merge(level2_data, nDT, by = c("BW","PrintSpot"))
   rm(level2_data)
 } else {
-  level3_data <- level2_data
-  rm(level2_data)
-  level3_data$NormMethod <- "none"
-  level3_data$k <- k
+  level3_data <- level2_data %>%
+    mutate(NormMethod = "none",
+           k = k)
 }
 
 #Add QA flags to the data
@@ -160,11 +132,10 @@ level4_logical_data <- level3_data %>%
   ungroup()
 
 level4_data <- full_join(level4_character_data, level4_numeric_data, by = c("MEP_Drug")) %>%
-  right_join(level4_logical_data, by = c("MEP_Drug"))
+  right_join(level4_logical_data, by = c("MEP_Drug")) %>%
+  mutate(QA_LowReplicateCount = Spot_PA_ReplicateCount < 3)
 
 #Add in the barcodes for each MEP_Drug
-level4_data <- addBarcodes(dt3 = level3_data, dt4 = level4_data)
-# Add a QA flag for spots with few replicates
-level4_data$QA_LowReplicateCount <- level4_data$Spot_PA_ReplicateCount < 3
+#level4_data <- addBarcodes(dt3 = level3_data, dt4 = level4_data)
 
 writeLevelStudyData(level4_data, 4)
