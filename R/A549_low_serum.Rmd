@@ -8,15 +8,9 @@ output:
     source_code: embed
 ---
 
-
-
 ```{r "setup", include=FALSE}
 knitr::opts_chunk$set(fig.width=12, fig.height=8,
                       echo=FALSE, warning=FALSE, message=FALSE, cache=FALSE)
-
-  # flexdashboard::flex_dashboard:
-  #   storyboard: true
-  #   source_code: embed
     
 library(MEMA)
 library(tidyverse)
@@ -24,7 +18,8 @@ library(scales)
 library(plotly)
 library(DT)
 library(httr)
-
+library(ComplexHeatmap)
+library(circlize)
 library(gridExtra)
 library(grid)
 library(lattice)
@@ -32,7 +27,7 @@ library(lattice)
 
 #' Print 50 randomly selected images from each ECM protein spot type
 #'
-#' This function is rather specific implemnentation without error checking. Assumption include:
+#' This function is rather specific implementation without error checking. Assumption include:
 #' the thread has already logged on to an omero instance.
 #' There are at least 50 images of each type of ECM protein
 #' The packages httr and ggplot have already been loaded (maybe others too). 
@@ -95,9 +90,12 @@ l1 <-  map(dir(path = path, pattern = "level_1_subset", full.names = TRUE), read
   bind_rows() %>%
   mutate(ECMp = str_remove(ECMp, "_.*"))
 
+high_cell_count_cutoff <- 350
 l2 <- map(dir(path = path, pattern = "level_2", full.names = TRUE), read_csv) %>%
   bind_rows() %>%
+  filter(Spot_PA_SpotCellCount <= high_cell_count_cutoff) %>%
   mutate(Study = studyName,
+         ECMp = str_remove(ECMp, "_.*"),
          Well_Ligand = paste(Well,Ligand,sep="_"),
          WellRow = factor(gsub("[[:digit:]]*","",Well),levels = c("H","G","F","E","D","C","B","A")),
          WellCol = as.integer(gsub("[[:alpha:]]","", Well)),
@@ -106,11 +104,15 @@ l2 <- map(dir(path = path, pattern = "level_2", full.names = TRUE), read_csv) %>
          OmeroThumbnailURL = paste0("<a href=\"https://meplincs.ohsu.edu/webclient/render_thumbnail/", 
             ImageID, "/\"", " target=\"_blank\">Omero</a>"),
          OmeroImageURL = paste0("<a href=\"https://meplincs.ohsu.edu/webclient/render_image/", 
-            ImageID, "/\"", " target=\"_blank\">Omero</a>")) %>%
-  group_by(Barcode, Well) %>%
-  mutate(WellCellCount = n(),
-         ECMp = str_remove(ECMp, "_.*")) %>%
-  ungroup()
+            ImageID, "/\"", " target=\"_blank\">Omero</a>")) 
+
+l3 <- dir(path = path, pattern = "level_3", full.names = TRUE) %>%
+   read_csv %>%
+  mutate(ECMp = str_remove(ECMp, "_.*"))
+
+l4 <- dir(path = path, pattern = "level_4", full.names = TRUE) %>%
+   read_csv %>%
+  mutate(ECMp = str_remove(ECMp, "_.*"))
 
 ```
 
@@ -121,8 +123,9 @@ l2 <- map(dir(path = path, pattern = "level_2", full.names = TRUE), read_csv) %>
 for(barcode in unique(l2$Barcode)){
   dt <- l2 %>%
     filter(Barcode==barcode) %>%
-    select(WellCol, WellRow, WellCellCount, CellLine) %>%
-    distinct
+    group_by(Well, WellRow, WellCol) %>%
+    summarise(WellCellCount = sum(Spot_PA_SpotCellCount), .groups = "drop")
+  
 p <- ggplot(dt, aes(x=WellCol, y=WellRow, fill=WellCellCount, label=sprintf("%5.0f \nCells", WellCellCount)))+
   geom_tile(colour="black")+
 scale_fill_gradient(low = "white", high = "red")+
@@ -169,6 +172,8 @@ p <- ggplot(dt, aes(x=reorder(ECMp,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA
   geom_boxplot(outlier.shape = NA)+
     scale_fill_manual(values = c("cornflowerblue","coral"))+
     scale_colour_manual(values = c("black","blueviolet"))+
+  coord_trans(y = "log2") +
+  scale_y_continuous(breaks = c(5, 25, 75, 150, 225, 300)) +
   guides(colour = guide_legend("Buffer"),
          fill=guide_legend("Protein Conc."))+
   labs(x = "ECM Protein", y="Spot Cell Count",title=paste("Spot Cell Count for",unique(dt$CellLine), "cells by ECM Protein, PBS spots"))+
@@ -178,22 +183,53 @@ p <- ggplot(dt, aes(x=reorder(ECMp,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA
 p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
 p
 
-dt <- l2[grepl("COL1",l2$MEP),]
 dt <- l2 %>%
   filter(str_detect(MEP, "COL1"))%>%
-    select(Ligand, Spot_PA_SpotCellCount, CellLine) %>%
-    distinct
+  select(Ligand, Spot_PA_SpotCellCount, CellLine) %>%
+  distinct
 
 p <- ggplot(dt, aes(x=reorder(Ligand,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA_SpotCellCount))+
   geom_boxplot(outlier.shape = NA)+
-  labs(x = "Ligand",
-       y="Spot Cell Count",
-       title=paste("Spot Cell Count for",unique(dt$CellLine), "cells by Ligand, COL1 spots"))+
+  coord_trans(y = "log2") +
+  scale_y_continuous(breaks = c(5, 25, 75, 150, 225, 300)) +labs(x = "Ligand",
+                                                                 y="Spot Cell Count",
+                                                                 title=paste("Spot Cell Count for",unique(dt$CellLine), "cells by Ligand, COL1 spots"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
 
 p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
 p
 
+
+df <- l3 %>%
+  filter(Ligand == "PBS")
+
+p <- ggplot(df, aes(x=reorder(ECMp,Spot_PA_SpotCellCount_RR, FUN=median), y=Spot_PA_SpotCellCount_RR))+
+  geom_boxplot(outlier.shape = NA)+
+  guides(colour = guide_legend("Buffer"),
+         fill=guide_legend("Protein Conc."))+
+  labs(x = "ECM Protein", y="Spot Cell Count (rrscaled)",
+       title=paste("Spot Cell Count for",unique(dt$CellLine), "cells by ECM Protein, PBS spots"))+
+  theme_bw() +
+  theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
+
+df <- l3 %>%
+  filter(ECMp == "COL1") %>%
+  select(Ligand, Spot_PA_SpotCellCount_RR, CellLine, Barcode, Well, ArrayRow, ArrayColumn) %>%
+  distinct()
+
+p <- ggplot(df, aes(x=reorder(Ligand,Spot_PA_SpotCellCount_RR, FUN=median), y=Spot_PA_SpotCellCount_RR))+
+  geom_boxplot(outlier.shape = NA) +
+  labs(x = "Ligand",
+       y="Spot Cell Count (rrscale)",
+       title=paste("Spot Cell Count for",unique(dt$CellLine), "cells by Ligand, COL1 spots")) +
+  theme_bw() +   
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
+
+p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p
 
 ```
 
@@ -208,9 +244,8 @@ These figures summarize the cell counts for the ECM proteins in wells containing
 
 dt <- l2 %>%
   filter(Ligand == "PBS") %>%
-  mutate(Nuclei_GT_EdU_MeanIntensity = squish(Nuclei_GT_EdU_MeanIntensity, range = quantile(l2$Nuclei_GT_EdU_MeanIntensity, c(.01, .98))))
+  mutate(Nuclei_GT_EdU_MeanIntensity = squish(Nuclei_GT_EdU_MeanIntensity, range = quantile(l2$Nuclei_GT_EdU_MeanIntensity, c(.01, .95))))
 
-dt <- l2[grepl("PBS",l2$MEP),]
 p <- ggplot(dt, aes(x=reorder(ECMp,Nuclei_GT_EdU_MeanIntensity  , FUN=median), y=log2(Nuclei_GT_EdU_MeanIntensity)))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "ECM Protein", y="EdU Intensity (log2)",title=paste("EdU Intensity  for",unique(dt$CellLine), "cells by ECM Protein"))+
@@ -221,7 +256,7 @@ p
 
 dt <- l2 %>%
   filter(str_detect(ECMp, "COL1")) %>%
-  mutate(Nuclei_GT_EdU_MeanIntensity = squish(Nuclei_GT_EdU_MeanIntensity, range = quantile(l2$Nuclei_GT_EdU_MeanIntensity, c(.01, .98))))
+  mutate(Nuclei_GT_EdU_MeanIntensity = squish(Nuclei_GT_EdU_MeanIntensity, range = quantile(l2$Nuclei_GT_EdU_MeanIntensity, c(.01, .95))))
 
 p <- ggplot(dt, aes(x=reorder(Ligand,Nuclei_GT_EdU_MeanIntensity, FUN=median), y=log2(Nuclei_GT_EdU_MeanIntensity)))+
   geom_boxplot(outlier.shape = NA)+
@@ -263,11 +298,11 @@ p
 
 dt <- l2 %>%
   filter(Ligand == "PBS") %>%
-  mutate(Nuclei_GT_EdU_VarianceIntensity = squish(Nuclei_GT_EdU_VarianceIntensity, range = quantile(l2$Nuclei_GT_EdU_VarianceIntensity, c(.02, .98))))
+  mutate(Nuclei_GT_EdU_VarianceIntensity = squish(Nuclei_GT_EdU_VarianceIntensity, range = quantile(l2$Nuclei_GT_EdU_VarianceIntensity, c(.02, .95))))
 
 p <- ggplot(dt, aes(x=reorder(ECMp,Nuclei_GT_EdU_VarianceIntensity, FUN=median), y=Nuclei_GT_EdU_VarianceIntensity))+
   geom_boxplot(outlier.shape = NA)+
-  scale_y_continuous(limits = c(0, 500)) +
+  #scale_y_continuous(limits = c(0, 500)) +
   labs(x = "ECM Protein", y="EdU Intensity Variance ",title=paste("EdU Intensity Variance for",unique(dt$CellLine), "cells by ECM Protein"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
 
@@ -276,11 +311,11 @@ p
 
 dt <- l2 %>%
   filter(str_detect(ECMp, "COL1")) %>%
-  mutate(Nuclei_GT_EdU_VarianceIntensity = squish(Nuclei_GT_EdU_VarianceIntensity, range = quantile(l2$Nuclei_GT_EdU_VarianceIntensity, c(.01, .98))))
+  mutate(Nuclei_GT_EdU_VarianceIntensity = squish(Nuclei_GT_EdU_VarianceIntensity, range = quantile(l2$Nuclei_GT_EdU_VarianceIntensity, c(.01, .95))))
 
 p <- ggplot(dt, aes(x=reorder(Ligand, Nuclei_GT_EdU_VarianceIntensity  ,FUN=median), y=Nuclei_GT_EdU_VarianceIntensity  ))+
   geom_boxplot(outlier.shape = NA)+
-  scale_y_continuous(limits = c(0, 500)) +
+  #scale_y_continuous(limits = c(0, 500)) +
   labs(x = "Ligand", y="EdU Intensity Variance ",title=paste("EdU Intensity Variance for",unique(dt$CellLine), "cells by Ligand"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
 
@@ -360,7 +395,7 @@ p
 
 dt <- l2 %>%
   filter(Ligand == "PBS") %>%
-  mutate(Cytoplasm_GT_KRT5_VarianceIntensity = squish(Cytoplasm_GT_KRT5_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT5_VarianceIntensity, c(.01, .98))))
+  mutate(Cytoplasm_GT_KRT5_VarianceIntensity = squish(Cytoplasm_GT_KRT5_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT5_VarianceIntensity, c(.01, .95))))
 
 p <- ggplot(dt, aes(x=reorder(ECMp,Cytoplasm_GT_KRT5_VarianceIntensity, FUN=median), y=Cytoplasm_GT_KRT5_VarianceIntensity))+
   geom_boxplot(outlier.shape = NA)+
@@ -372,7 +407,7 @@ p
 
 dt <- l2 %>%
   filter(str_detect(ECMp, "COL1")) %>%
-  mutate(Cytoplasm_GT_KRT5_VarianceIntensity = squish(Cytoplasm_GT_KRT5_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT5_VarianceIntensity, c(.01, .98))))
+  mutate(Cytoplasm_GT_KRT5_VarianceIntensity = squish(Cytoplasm_GT_KRT5_VarianceIntensity, range = quantile(l2$Cytoplasm_GT_KRT5_VarianceIntensity, c(.01, .95))))
 
 p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_GT_KRT5_VarianceIntensity  ,FUN=median), y=Cytoplasm_GT_KRT5_VarianceIntensity  ))+
   geom_boxplot(outlier.shape = NA)+
@@ -404,7 +439,7 @@ p
 
 These figures summarize the KRT5 signal from the cytoplasm. The first set of boxplots are the mean intensity. This value is gated at the cell level to classify each cell as KRT5+/-. The proportion of KRT5+ cells in each spot are summarized in the boxplots of the second figure.  
 
-The KRT19 variance shows if there is evidence of signal in the cytoplasmic texture.
+The KRT5 variance shows if there is evidence of signal in the cytoplasmic texture.
 
 Ligand values are from the COL1 spots and the ECMp values are from the PBS wells.  
 
@@ -431,7 +466,6 @@ p <- ggplot(dt, aes(x=reorder(Ligand,Cytoplasm_GT_KRT19_MeanIntensity, FUN=media
 
 p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
 p
-
 
 ```
 
@@ -509,7 +543,7 @@ p <- ggplot(df, aes(x = log2(Cytoplasm_GT_KRT19_MeanIntensity), y = log2(Cytopla
     scale_color_manual(values = c("0" = "gray24", "1" = "darkgreen", "2" = "red4", "3" = "orange")) +
     guides(color = guide_legend(override.aes = list(size = 3, alpha = 1))) +
   theme_bw()+
-  facet_grid(Barcode~Ligand1)
+  facet_grid(Barcode~Well)
 p
 
 ```
@@ -535,7 +569,131 @@ colNamesDisplay <- c("Barcode","ArrayRow","ArrayColumn","ECM protein","Ligand","
 #Setup for spots to display images
 colNamesSpots <- c(colNames,"OmeroDetailURL")
 colNamesDisplaySpots <- c(colNamesDisplay,"Image Link")
-dt <- setorder(dt, -Spot_PA_SpotCellCount)
-datatable(dt[,colNamesSpots, with=FALSE], options = list(pageLength = 25), colnames =colNamesDisplaySpots, escape = FALSE)
+df <- l2 %>%
+  select(all_of(colNamesSpots)) %>%
+  arrange(Spot_PA_SpotCellCount, descending = TRUE)
+datatable(df, options = list(pageLength = 25), colnames =colNamesDisplaySpots, escape = FALSE)
 
 ```
+
+***
+
+### Heatmaps  
+
+```{r heatmaps}
+
+
+create_mep_heatmap <- function(df, feature, feature_display_name, col_limits = c(-2, 0, 2), row_order = NULL, column_order = NULL){
+  # COL1_PBS <- df %>%
+  # filter(ECMp == "COL1",
+  #        Ligand == "PBS") %>%
+  # select(feature) %>%
+  # pull
+
+  df_feature <- df %>%
+  filter(!ECMp %in% c("gelatin", "None")) %>%
+  select(ECMp, Ligand, feature) %>%
+  pivot_wider(names_from = Ligand, values_from = feature)
+
+dm <- df_feature %>%
+  select(-ECMp) %>%
+  as.matrix
+#dm <- dm - COL1_PBS
+rownames(dm) <- df_feature$ECMp
+
+if(is_null(row_order)){
+  show_row_dend <- TRUE
+  cluster_rows <- TRUE
+} else {
+  show_row_dend <- FALSE
+  cluster_rows <- FALSE
+} 
+if(is_null(column_order)){
+  show_column_dend <- TRUE
+  cluster_columns <- TRUE
+} else {
+  show_column_dend <- FALSE
+  cluster_columns <- FALSE
+} 
+
+hm <- Heatmap(dm,
+              name = feature_display_name,
+              col = colorRamp2(col_limits, c("#2166AC", "white", "#B2182B")),
+              row_names_gp = gpar(fontsize = 5),
+              cluster_rows = cluster_rows,
+              row_order = row_order,
+              show_row_dend = show_row_dend,
+              column_names_gp = gpar(fontsize = 5),
+              cluster_columns = cluster_columns,
+              column_order = column_order,
+              show_column_dend = show_column_dend)
+return(hm)
+
+}
+###Debug order the rows and columns by the median cell counts
+
+SCC_hm <- create_mep_heatmap(l4, "Spot_PA_SpotCellCount_RR", "Spot Cell\nCount")
+SCC_hm
+SCC_row_order <- row_order(SCC_hm)
+SCC_column_order <- column_order(SCC_hm)
+
+EdU_hm <- create_mep_heatmap(l4,
+                             "Nuclei_PA_Gated_EdUPositiveProportion_RR",
+                             "EdU+\nproportion",
+                             col_limits = c(-1, 0, 1.5),
+                             row_order = SCC_row_order,
+                             column_order = SCC_column_order)
+EdU_hm
+
+KRT5_hm <- create_mep_heatmap(l4,
+                             "Cytoplasm_PA_Gated_KRT5PositiveProportion_RR",
+                             "Krt5+\nproportion",
+                             col_limits = c(-1, 0, 1.5),
+                             row_order = SCC_row_order,
+                             column_order = SCC_column_order)
+KRT5_hm
+
+KRT19_hm <- create_mep_heatmap(l4,
+                             "Cytoplasm_PA_Gated_KRT19PositiveProportion_RR",
+                             "Krt19+\nproportion",
+                             col_limits = c(-1, 0, 1.5),
+                             row_order = SCC_row_order,
+                             column_order = SCC_column_order)
+KRT19_hm
+
+```
+
+***
+
+These heatmaps show rrscaled values ordered by the clustering of the spot cell counts.  
+### PCA
+
+```{r PCA_analysis}
+
+```
+
+***
+to be developed at MEP, spot and cell levels
+
+### UMAP
+
+```{r UMAP_analysis}
+
+```
+
+***
+
+to be developed at MEP, spot and cell levels
+
+### T0
+
+```{r T0_analysis}
+
+```
+
+***
+
+Compare plating cell counts at 0 and 72 hours
+
+
+
