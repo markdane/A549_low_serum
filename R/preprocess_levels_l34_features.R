@@ -61,12 +61,14 @@ if(!interactive()){
 #Get barcodes based on Synapse data
 barcodes <-c(paste0("LI8X0113", 2:9), "LI8X01140")
 
+high_cell_count_cutoff <- 350
 level2_data <- lapply(barcodes, function(barcode){
   sd <- read_csv(paste0(input_path,barcode,"_level_2.csv"),
                  col_types = cols())
 }) %>%
   bind_rows() %>%
-  filter(!ECMp=="None") %>%
+  filter(!ECMp=="None",
+         Spot_PA_SpotCellCount <= high_cell_count_cutoff) %>%
   select(-matches("Cells_")) %>%
   mutate(BW = paste(Barcode, Well, sep = "_")) %>%
   data.table()
@@ -84,7 +86,7 @@ rrscaleColumn <- function(x, zeros = 1){
 }
 
 level2_data <- level2_data %>%
-  mutate(across(matches("SpotCellCount|Intensity"), rrscaleColumn, .names = "{col}_RR"))
+  mutate(across(matches("SpotCellCount|Intensity|Proportion"), rrscaleColumn, .names = "{col}_RR"))
 
 #RUVLoess normalize all signals
 if(!k==0){
@@ -105,15 +107,14 @@ if(!k==0){
 }
 
 #Add QA flags to the data
-level3_data <- QASpotLevelData(level3_data, lowSpotCellCountThreshold=5,
-                        lowRegionCellCountThreshold = 0.4,
-                        lowWellQAThreshold = .7)
+#level3_data <- QASpotLevelData(level3_data, lowSpotCellCountThreshold=5,
+#                        lowRegionCellCountThreshold = 0.4,
+#                        lowWellQAThreshold = .7)
 
 writeLevelStudyData(level3_data, level = 3)
 
 level4_numeric_data <- level3_data %>%
-  select(-contains("Spot")) %>%
-  select(-matches("xi|ImageID")) %>%
+  select(-matches("Spot$|xi|ImageID")) %>%
   group_by(MEP_Drug) %>%
   summarise_if(is.numeric, median)  %>%
   ungroup() %>%
@@ -132,8 +133,9 @@ level4_logical_data <- level3_data %>%
   ungroup()
 
 level4_data <- full_join(level4_character_data, level4_numeric_data, by = c("MEP_Drug")) %>%
-  right_join(level4_logical_data, by = c("MEP_Drug")) %>%
-  mutate(QA_LowReplicateCount = Spot_PA_ReplicateCount < 3)
+  right_join(level4_logical_data, by = c("MEP_Drug")) 
+# %>%
+#   mutate(QA_LowReplicateCount = Spot_PA_ReplicateCount < 3)
 
 #Add in the barcodes for each MEP_Drug
 #level4_data <- addBarcodes(dt3 = level3_data, dt4 = level4_data)
