@@ -12,8 +12,9 @@ output:
 knitr::opts_chunk$set(fig.width=12, fig.height=8,
                       echo=FALSE, warning=FALSE, message=FALSE, cache=FALSE)
     
-library(MEMA)
+
 library(tidyverse)
+library(MEMA)
 library(scales)
 library(plotly)
 library(DT)
@@ -185,10 +186,10 @@ p
 
 dt <- l2 %>%
   filter(str_detect(MEP, "COL1"))%>%
-  select(Ligand, Spot_PA_SpotCellCount, CellLine) %>%
+  select(Ligand, Spot_PA_SpotCellCount, CellLine, Barcode) %>%
   distinct
 
-p <- ggplot(dt, aes(x=reorder(Ligand,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA_SpotCellCount))+
+p <- ggplot(dt, aes(x=reorder(Ligand,Spot_PA_SpotCellCount, FUN=median), y=Spot_PA_SpotCellCount, color = Barcode))+
   geom_boxplot(outlier.shape = NA)+
   coord_trans(y = "log2") +
   scale_y_continuous(breaks = c(5, 25, 75, 150, 225, 300)) +labs(x = "Ligand",
@@ -196,8 +197,8 @@ p <- ggplot(dt, aes(x=reorder(Ligand,Spot_PA_SpotCellCount, FUN=median), y=Spot_
                                                                  title=paste("Spot Cell Count for",unique(dt$CellLine), "cells by Ligand, COL1 spots"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
 
-p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
-p
+p_counts_ligand <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p_counts_ligand
 
 
 df <- l3 %>%
@@ -258,13 +259,14 @@ dt <- l2 %>%
   filter(str_detect(ECMp, "COL1")) %>%
   mutate(Nuclei_GT_EdU_MeanIntensity = squish(Nuclei_GT_EdU_MeanIntensity, range = quantile(l2$Nuclei_GT_EdU_MeanIntensity, c(.01, .95))))
 
-p <- ggplot(dt, aes(x=reorder(Ligand,Nuclei_GT_EdU_MeanIntensity, FUN=median), y=log2(Nuclei_GT_EdU_MeanIntensity)))+
+p <- ggplot(dt, aes(x=reorder(Ligand,Nuclei_GT_EdU_MeanIntensity, FUN=median), y=log2(Nuclei_GT_EdU_MeanIntensity), color = Barcode))+
   geom_boxplot(outlier.shape = NA)+
   labs(x = "Ligand", y="EdU Intensity (log2)",title=paste("EdU Intensity for",unique(dt$CellLine), "cells by Ligand"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
 
-p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
-p
+p_prolif_ligand <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p_prolif_ligand
+
 
 ```
 
@@ -284,14 +286,23 @@ p
 dt <- l2 %>%
     filter(str_detect(ECMp, "COL1"))
 
-p <- ggplot(dt, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion  ,FUN=median), y=Nuclei_PA_Gated_EdUPositiveProportion  ))+
+p <- ggplot(dt, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion  ,FUN=median), y=Nuclei_PA_Gated_EdUPositiveProportion , color = Barcode))+
   geom_boxplot(outlier.shape = NA)+
+  coord_cartesian(ylim = c(0, .5))+
   labs(x = "Ligand", y="EdU High Proportion ",title=paste("EdU High Proportion for",unique(dt$CellLine), "cells by Ligand"))+
   theme_bw() +   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(1.2)),axis.title.x = element_text(size=rel(1.5)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)), strip.text = element_text(size = 10))
 
-p <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
-p
+p_EDU_prop_ligand <- p +  geom_jitter(aes(),size=rel(.2),alpha=.5, colour="black")
+p_EDU_prop_ligand
 
+```
+
+```{r output_plots}
+pdf("../plots/A549_boxplots.pdf",width = 11)
+print(p_counts_ligand)
+print(p_prolif_ligand)
+print(p_EDU_prop_ligand)
+res <- dev.off()
 ```
 
 ```{r EdUintStdBoxplts, fig.width=12,fig.height=7}
