@@ -85,7 +85,7 @@ printImages <- function(dt, groupType = "Well", nrImages = 20){
 ```{r readData, echo=FALSE}
 
 studyName <- "a549_low_serum"
-path <- "/Users/dane/Documents/A549_low_serum/data/"
+path <- "../data/"
 
 l1 <-  map(dir(path = path, pattern = "level_1_subset", full.names = TRUE), read_csv) %>%
   bind_rows() %>%

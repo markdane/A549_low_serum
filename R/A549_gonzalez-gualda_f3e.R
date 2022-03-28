@@ -11,6 +11,7 @@ p_full <-ggplot(df, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion, 
                    y=Nuclei_PA_Gated_EdUPositiveProportion,
                    color = Ligand))+
   geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0,.5))+
   guides(color = "none") +
   labs(x = "Ligand",
        y="EdU High Proportion",
@@ -21,7 +22,11 @@ p_full <-ggplot(df, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion, 
         plot.title = element_text(size = rel(1)),
         legend.text=element_text(size = rel(1)),
         legend.title=element_text(size = rel(1)),
-        strip.text = element_text(size = 10))
+        strip.text = element_text(size = 10),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank())
 
 p_full
 
@@ -29,6 +34,7 @@ p_paper <-ggplot(df, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion,
                    y=Nuclei_PA_Gated_EdUPositiveProportion,
                    color = Ligand))+
   geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0,.5))+
   guides(color = "none") +
   labs(x = "Ligand",
        y="EdU High Proportion")+
@@ -38,7 +44,11 @@ p_paper <-ggplot(df, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion,
         plot.title = element_text(size = rel(1)),
         legend.text=element_text(size = rel(1)),
         legend.title=element_text(size = rel(1)),
-        strip.text = element_text(size = 10))
+        strip.text = element_text(size = 10),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank())
 
 p_paper
 
