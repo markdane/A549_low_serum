@@ -1,16 +1,22 @@
 #create figure 3e for González-Gualda et al.
 
 library(tidyverse)
+library(ggbeeswarm)
+library(DescTools)
 
 l3 <- read_csv("../data/a549_low_serum_level_3.csv")
 
 df <- l3 %>%
-  filter(ECMp == "COL1_NA_NA")
+  filter(ECMp == "COL1_NA_NA") %>%
+  mutate(Ligand = factor(Ligand))
+
+dunnet_results <- DunnettTest(Nuclei_PA_Gated_EdUPositiveProportion ~ Ligand, data = df, control="PBS", conf.level=0.9)
 
 p_full <-ggplot(df, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion, FUN=median),
                    y=Nuclei_PA_Gated_EdUPositiveProportion,
                    color = Ligand))+
   geom_boxplot(outlier.shape = NA) +
+  geom_quasirandom(method = "pseudorandom", size = .1, alpha = .5, color = "black")+
   coord_cartesian(ylim = c(0,.5))+
   guides(color = "none") +
   labs(x = "Ligand",
@@ -34,8 +40,10 @@ p_paper <-ggplot(df, aes(x=reorder(Ligand,Nuclei_PA_Gated_EdUPositiveProportion,
                    y=Nuclei_PA_Gated_EdUPositiveProportion,
                    color = Ligand))+
   geom_boxplot(outlier.shape = NA) +
+  geom_quasirandom(method = "pseudorandom", size = .1, alpha = .5)+
   coord_cartesian(ylim = c(0,.5))+
-  guides(color = "none") +
+  guides(color = "none",
+          fill = "none") +
   labs(x = "Ligand",
        y="EdU High Proportion")+
   theme_bw() +
@@ -60,3 +68,5 @@ res <- dev.off()
 pdf("../plots/Gonzalez-gualda_fig3e.pdf", useDingbats = FALSE, width = 8, height = 2)
 print(p_paper)
 res <- dev.off()
+
+write_csv(data.frame( Ligand = rownames(dunnet_results[["PBS"]]), dunnet_results$PBS),file = "../plots/Gonzalez-gualda_fig3e.csv")
