@@ -70,3 +70,33 @@ print(p_paper)
 res <- dev.off()
 
 write_csv(data.frame( Ligand = rownames(dunnet_results[["PBS"]]), dunnet_results$PBS),file = "../plots/Gonzalez-gualda_fig3e.csv")
+
+#Response to request for poster figure
+
+p_Nuclei_GT_EdU_VarianceIntensity <-ggplot(df, aes(x=reorder(Ligand,Nuclei_GT_EdU_VarianceIntensity, FUN=median),
+                        y=Nuclei_GT_EdU_VarianceIntensity,
+                        color = Barcode))+
+  geom_boxplot(outlier.shape = NA) +
+  geom_quasirandom(method = "pseudorandom", size = .05, alpha = .2, color = "black")+
+  coord_cartesian(ylim = c(0,300))+
+  #guides(color = "none") +
+  labs(x = "Ligand",
+       y="EdU Variance Intensity",
+       title=paste("EdU Variance Intensity for",unique(df$CellLine), "cells by Ligand"))+
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.9)),
+        axis.title.x = element_text(size=rel(1.5)),
+        plot.title = element_text(size = rel(1)),
+        legend.text=element_text(size = rel(.5)),
+        legend.title=element_text(size = rel(1)),
+        strip.text = element_text(size = 10),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank())
+
+p_Nuclei_GT_EdU_VarianceIntensity
+
+pdf("../plots/Hui-Ling-Oue_poster.pdf", useDingbats = FALSE, width = 8, height = 5)
+print(p_Nuclei_GT_EdU_VarianceIntensity)
+res <- dev.off()
